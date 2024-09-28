@@ -365,6 +365,7 @@ class UnconfirmedTransaction(db.Model):
     crypto = db.Column(db.String)
     amount_crypto = db.Column(db.Numeric)
     callback_confirmed = db.Column(db.Boolean, default=False)
+    confirmations = db.Column(db.Integer, default=0)
     created_at = db.Column(db.DateTime, default=db.func.current_timestamp())
 
     __table_args__ = (db.UniqueConstraint("crypto", "txid", "invoice_id"),)
@@ -376,6 +377,7 @@ class UnconfirmedTransaction(db.Model):
             "addr": self.addr,
             "txid": self.txid,
             "status": "UNCONFIRMED",
+            "confirmations": self.confirmations
         }
 
     @classmethod
@@ -402,6 +404,7 @@ class UnconfirmedTransaction(db.Model):
             amount_crypto=amount,
             crypto=crypto_name,
             addr=addr,
+            confirmations=0
         )
         db.session.add(t)
         db.session.commit()
@@ -417,6 +420,7 @@ class UnconfirmedTransaction(db.Model):
         db.session.commit()
 
 
+
 class Transaction(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     invoice_id = db.Column(db.Integer, db.ForeignKey("invoice.id"), nullable=False)
@@ -426,6 +430,7 @@ class Transaction(db.Model):
     amount_fiat = db.Column(db.Numeric)
     need_more_confirmations = db.Column(db.Boolean, default=True)
     callback_confirmed = db.Column(db.Boolean, default=False)
+    confirmations = db.Column(db.Integer, default=0)
     created_at = db.Column(db.DateTime, default=db.func.current_timestamp())
     updated_at = db.Column(
         db.DateTime,
@@ -444,6 +449,7 @@ class Transaction(db.Model):
             "addr": self.addr,
             "txid": self.txid,
             "status": "CONFIRMED",
+            "confirmations": self.confirmations
         }
 
     @property
@@ -477,6 +483,7 @@ class Transaction(db.Model):
             tx.amount_fiat = tx.amount_crypto * rate
             tx.need_more_confirmations = False
             tx.callback_confirmed = True
+            tx.confirmations = 0
 
             db.session.add(tx)
             db.session.commit()
@@ -507,8 +514,10 @@ class Transaction(db.Model):
         else:
             t.amount_fiat = t.amount_crypto * invoice.exchange_rate
 
+        t.confirmations = 0
         if tx["confirmations"] >= crypto.wallet.confirmations:
             t.need_more_confirmations = False
+            t.confirmations = tx["confirmations"]
 
         db.session.add(t)
         db.session.commit()
@@ -517,9 +526,12 @@ class Transaction(db.Model):
     def is_more_confirmations_needed(self):
         crypto = Crypto.instances[self.crypto]
         confirmations = crypto.get_confirmations_by_txid(self.txid)
+        self.confirmations = confirmations
+
         if confirmations >= self.invoice.wallet.confirmations:
             self.need_more_confirmations = False
-            db.session.commit()
+        db.session.commit()
+
         return self.need_more_confirmations
 
 
